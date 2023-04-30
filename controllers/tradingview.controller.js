@@ -1,0 +1,106 @@
+const Binance = require("node-binance-api");
+const binance = new Binance().options({
+  APIKEY: process.env.API_KEY,
+  APISECRET: process.env.API_SECRET,
+  test: true,
+  //   hedgeMode: true
+});
+const { jsonResponse, jsonError } = require("../helper");
+
+const closeAllPositions = async (pair) => {
+    try {
+      const positions = await binance.futuresPositionRisk();
+      const symbolInfo = positions.find((s) => s.symbol === pair);
+      
+      if (parseFloat(symbolInfo.positionAmt) !== 0) {
+        const symbol = symbolInfo.symbol;
+        const side = parseFloat(symbolInfo.positionAmt) > 0 ? 'SELL' : 'BUY';
+        const quantity = Math.abs(parseFloat(symbolInfo.positionAmt));
+        side === "SELL" ? await binance.futuresMarketSell(symbol, quantity) : await binance.futuresMarketBuy(symbol, quantity)
+      }
+      return true
+    } catch (error) {
+      return false
+    }
+  };
+
+async function futuresCalculateQty(symbolInfo, price, amount) {
+  const lotSizeFilter = symbolInfo.filters.find(
+    (f) => f.filterType === "LOT_SIZE"
+  );
+  const stepSize = parseFloat(lotSizeFilter.stepSize);
+
+  let qty;
+
+  qty = amount / price;
+  qty = parseFloat(qty.toFixed(8));
+  qty = Math.floor(qty / stepSize) * stepSize;
+
+  return qty;
+}
+
+exports.placeOrder = async (req, res) => {
+  const { symbol, side, type, quantityUsdt, leverage, priceLimit } = req.body;
+
+  const exchangeInfo = await binance.futuresExchangeInfo();
+  const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
+  if (!symbolInfo) {
+    throw new Error(`Symbol ${symbol} not found`);
+  }
+
+  const tickSize = parseFloat(
+    symbolInfo.filters.find((f) => f.filterType === "PRICE_FILTER").tickSize
+  );
+  const roundedPrice = await binance.roundTicks(
+    parseFloat(priceLimit),
+    tickSize
+  );
+
+  const calculateQty = await futuresCalculateQty(
+    symbolInfo,
+    parseFloat(priceLimit),
+    parseInt(quantityUsdt)
+  );
+
+  // cancel all order
+  const waitCloseAll = await closeAllPositions(symbol)
+  await binance.futuresCancelAll(symbol)
+
+  const setLeverage = await binance.futuresLeverage(symbol, parseInt(leverage));
+  if (setLeverage.msg) {
+    jsonError(res, setLeverage);
+  }
+  
+  if (waitCloseAll) {
+    let order;
+    if (side === "BUY" || side === "LONG") {
+      if (type === "LIMIT") {
+        order = await binance.futuresBuy(symbol, calculateQty, roundedPrice, {
+          timeInForce: "GTC",
+        });
+      } else {
+        order = await binance.futuresMarketBuy(symbol, calculateQty);
+      }
+    } else if (side === "SELL" || side === "SHORT") {
+      if (type === "LIMIT") {
+        order = await binance.futuresSell(symbol, calculateQty, roundedPrice, {
+          timeInForce: "GTC",
+        });
+      } else {
+        order = await binance.futuresMarketSell(symbol, calculateQty);
+      }
+    }
+
+    let result = {
+      ...order,
+      ...req.body
+
+    };
+
+    if (order.msg) {
+      jsonError(res, result);
+    } else {
+      jsonResponse(res, result);
+    }
+  }
+};
