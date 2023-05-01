@@ -2,27 +2,28 @@ const Binance = require("node-binance-api");
 const binance = new Binance().options({
   APIKEY: process.env.API_KEY,
   APISECRET: process.env.API_SECRET,
-//   test: process.env.TEST,
-//   hedgeMode: process.env.HEDEMODE
+  test: process.env.TEST,
+  hedgeMode: process.env.HEDEMODE,
 });
 const { jsonResponse, jsonError } = require("../helper");
 
 const closeAllPositions = async (pair) => {
-    try {
-      const positions = await binance.futuresPositionRisk();
-      const symbolInfo = positions.find((s) => s.symbol === pair);
-      
-      if (parseFloat(symbolInfo.positionAmt) !== 0) {
-        const symbol = symbolInfo.symbol;
-        const side = parseFloat(symbolInfo.positionAmt) > 0 ? 'SELL' : 'BUY';
-        const quantity = Math.abs(parseFloat(symbolInfo.positionAmt));
-        side === "SELL" ? await binance.futuresMarketSell(symbol, quantity) : await binance.futuresMarketBuy(symbol, quantity)
-      }
-      return true
-    } catch (error) {
-      return false
+  try {
+    const positions = await binance.futuresPositionRisk();
+    const symbolInfo = positions.find((s) => s.symbol === pair);
+    if (parseFloat(symbolInfo.positionAmt) !== 0) {
+      const symbol = symbolInfo.symbol;
+      const side = parseFloat(symbolInfo.positionAmt) > 0 ? "SELL" : "BUY";
+      const quantity = Math.abs(parseFloat(symbolInfo.positionAmt));
+      side === "SELL"
+        ? await binance.futuresMarketSell(symbol, quantity)
+        : await binance.futuresMarketBuy(symbol, quantity);
     }
-  };
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
 
 async function futuresCalculateQty(symbolInfo, price, amount) {
   const lotSizeFilter = symbolInfo.filters.find(
@@ -63,14 +64,14 @@ exports.placeOrder = async (req, res) => {
   );
 
   // cancel all order
-  const waitCloseAll = await closeAllPositions(symbol)
-  await binance.futuresCancelAll(symbol)
+  const waitCloseAll = await closeAllPositions(symbol);
+  await binance.futuresCancelAll(symbol);
 
   const setLeverage = await binance.futuresLeverage(symbol, parseInt(leverage));
   if (setLeverage.msg) {
     jsonError(res, setLeverage);
   }
-  
+
   if (waitCloseAll) {
     let order;
     if (side === "BUY" || side === "LONG") {
@@ -93,8 +94,7 @@ exports.placeOrder = async (req, res) => {
 
     let result = {
       ...order,
-      ...req.body
-
+      ...req.body,
     };
 
     if (order.msg) {
@@ -102,5 +102,23 @@ exports.placeOrder = async (req, res) => {
     } else {
       jsonResponse(res, result);
     }
+  }
+};
+
+exports.stopAll = async (req, res) => {
+  if (!req.body.symbol) {
+    jsonError(res, {
+      message: "Empty symbol",
+    });
+  }
+
+  const waitCloseAll = await closeAllPositions(req.body.symbol);
+
+  if (waitCloseAll) {
+    jsonResponse(res, { message: "Success stop all" });
+  } else {
+    jsonError(res, {
+      message: "Cannot stop",
+    });
   }
 };
