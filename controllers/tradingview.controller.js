@@ -25,7 +25,7 @@ const closeAllPositions = async (pair) => {
   }
 };
 
-async function futuresCalculateQty(symbolInfo, price, amount) {
+const futuresCalculateQty = async (symbolInfo, price, amount) => {
   const lotSizeFilter = symbolInfo.filters.find(
     (f) => f.filterType === "LOT_SIZE"
   );
@@ -38,10 +38,57 @@ async function futuresCalculateQty(symbolInfo, price, amount) {
   qty = Math.floor(qty / stepSize) * stepSize;
 
   return qty;
-}
+};
+
+const getStopLossTakeProfit = async (
+  type,
+  priceLimit,
+  rrr,
+  basedTick,
+  tickSize,
+  symbol
+) => {
+
+  if(symbol === "SOLUSDT") tickSize = 0.001
+
+
+  let takeProfitPrice = await binance.roundTicks(
+    parseFloat(priceLimit) + (rrr * basedTick * tickSize),
+    tickSize
+  );
+  let stopPrice = await binance.roundTicks(
+    parseFloat(priceLimit) -( basedTick * tickSize),
+    tickSize
+  );
+
+  if (type === "SELL" || type === "SHORT") {
+    takeProfitPrice = await binance.roundTicks(
+      parseFloat(priceLimit) - (rrr * basedTick * tickSize),
+      tickSize
+    );
+    stopPrice = await binance.roundTicks(
+      parseFloat(priceLimit) + (basedTick * tickSize),
+      tickSize
+    );
+  }
+
+  return {
+    takeProfitPrice: takeProfitPrice,
+    stopPrice: stopPrice,
+  };
+};
 
 exports.placeOrder = async (req, res) => {
-  const { symbol, side, type, quantityUsdt, leverage, priceLimit } = req.body;
+  const {
+    symbol,
+    side,
+    type,
+    quantityUsdt,
+    leverage,
+    priceLimit,
+    rrr = 2,
+    basedTick,
+  } = req.body;
 
   const exchangeInfo = await binance.futuresExchangeInfo();
   const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
@@ -52,6 +99,7 @@ exports.placeOrder = async (req, res) => {
   const tickSize = parseFloat(
     symbolInfo.filters.find((f) => f.filterType === "PRICE_FILTER").tickSize
   );
+
   const roundedPrice = await binance.roundTicks(
     parseFloat(priceLimit),
     tickSize
@@ -62,6 +110,8 @@ exports.placeOrder = async (req, res) => {
     parseFloat(priceLimit),
     parseInt(quantityUsdt)
   );
+
+  let priceStop;
 
   // cancel all order
   const waitCloseAll = await closeAllPositions(symbol);
@@ -78,23 +128,92 @@ exports.placeOrder = async (req, res) => {
       if (type === "LIMIT") {
         order = await binance.futuresBuy(symbol, calculateQty, roundedPrice, {
           timeInForce: "GTC",
+          type: "LIMIT",
         });
       } else {
         order = await binance.futuresMarketBuy(symbol, calculateQty);
       }
+
+      priceStop = await getStopLossTakeProfit(
+        "BUY",
+        roundedPrice,
+        rrr,
+        basedTick,
+        tickSize,
+        symbol
+      );
+      const orderSL = await binance.futuresOrder(
+        "SELL",
+        symbol,
+        calculateQty,
+        false,
+        {
+          type: "STOP_MARKET",
+          newOrderRespType: "FULL",
+          stopPrice: priceStop.stopPrice,
+          closePosition: true,
+        }
+      );
+      const orderTP = await binance.futuresOrder(
+        "SELL",
+        symbol,
+        calculateQty,
+        false,
+        {
+          type: "TAKE_PROFIT_MARKET",
+          newOrderRespType: "FULL",
+          stopPrice: priceStop.takeProfitPrice,
+          closePosition: true,
+        }
+      );
     } else if (side === "SELL" || side === "SHORT") {
       if (type === "LIMIT") {
         order = await binance.futuresSell(symbol, calculateQty, roundedPrice, {
           timeInForce: "GTC",
+          type: "LIMIT",
         });
       } else {
         order = await binance.futuresMarketSell(symbol, calculateQty);
       }
+
+      priceStop = await getStopLossTakeProfit(
+        "SELL",
+        roundedPrice,
+        rrr,
+        basedTick,
+        tickSize,
+        symbol
+      );
+      const orderSL = await binance.futuresOrder(
+        "BUY",
+        symbol,
+        calculateQty,
+        false,
+        {
+          type: "STOP_MARKET",
+          newOrderRespType: "FULL",
+          stopPrice: priceStop.stopPrice,
+          closePosition: true,
+        }
+      );
+      const orderTP = await binance.futuresOrder(
+        "BUY",
+        symbol,
+        calculateQty,
+        false,
+        {
+          type: "TAKE_PROFIT_MARKET",
+          newOrderRespType: "FULL",
+          stopPrice: priceStop.takeProfitPrice,
+          closePosition: true,
+        }
+      );
     }
 
     let result = {
       ...order,
       ...req.body,
+      ...priceStop,
     };
 
     if (order.msg) {
