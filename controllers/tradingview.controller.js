@@ -118,6 +118,7 @@ exports.placeOrder = async (req, res) => {
   await binance.futuresCancelAll(symbol);
 
   const setLeverage = await binance.futuresLeverage(symbol, parseInt(leverage));
+
   if (setLeverage.msg) {
     jsonError(res, setLeverage);
   }
@@ -173,7 +174,9 @@ exports.placeOrder = async (req, res) => {
           type: "LIMIT",
         });
       } else {
+        console.log(`Create new ${side} order`)
         order = await binance.futuresMarketSell(symbol, calculateQty);
+        console.log(`${order.status} - Success placing order`)
       }
 
       priceStop = await getStopLossTakeProfit(
@@ -184,30 +187,38 @@ exports.placeOrder = async (req, res) => {
         tickSize,
         symbol
       );
-      const orderSL = await binance.futuresOrder(
-        "BUY",
-        symbol,
-        calculateQty,
-        false,
-        {
-          type: "STOP_MARKET",
-          newOrderRespType: "FULL",
-          stopPrice: priceStop.stopPrice,
-          closePosition: true,
-        }
-      );
-      const orderTP = await binance.futuresOrder(
-        "BUY",
-        symbol,
-        calculateQty,
-        false,
-        {
-          type: "TAKE_PROFIT_MARKET",
-          newOrderRespType: "FULL",
-          stopPrice: priceStop.takeProfitPrice,
-          closePosition: true,
-        }
-      );
+
+      if(order.status === "NEW") {
+        console.log("Process - set stoploss...")
+        const orderSL = await binance.futuresOrder(
+          "BUY",
+          symbol,
+          calculateQty,
+          false,
+          {
+            type: "STOP_MARKET",
+            newOrderRespType: "FULL",
+            stopPrice: priceStop.stopPrice,
+            closePosition: true,
+          }
+        );
+
+        console.log(`${orderSL.status} - Success placing stoploss`)
+        console.log("Process - set take profit...")
+        const orderTP = await binance.futuresOrder(
+          "BUY",
+          symbol,
+          calculateQty,
+          false,
+          {
+            type: "TAKE_PROFIT_MARKET",
+            newOrderRespType: "FULL",
+            stopPrice: priceStop.takeProfitPrice,
+            closePosition: true,
+          }
+        );
+        console.log(`${orderTP.status} - Success placing order take profit`)
+      }
     }
 
     let result = {
