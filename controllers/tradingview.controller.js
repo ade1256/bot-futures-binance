@@ -91,6 +91,7 @@ exports.placeOrder = async (req, res) => {
   } = req.body;
 
   const exchangeInfo = await binance.futuresExchangeInfo();
+  
   const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
   if (!symbolInfo) {
     throw new Error(`Symbol ${symbol} not found`);
@@ -133,47 +134,56 @@ exports.placeOrder = async (req, res) => {
         });
       } else {
         console.log(`Create new MARKET ${side} order`)
-        order = await binance.futuresMarketBuy(symbol, calculateQty);
+        order = await binance.futuresMarketBuy(symbol, calculateQty, {
+          newOrderRespType: "RESULT"
+        });
         console.log(`${order.status} - Success placing order`)
       }
 
-      priceStop = await getStopLossTakeProfit(
-        "BUY",
-        roundedPrice,
-        rrr,
-        basedTick,
-        tickSize,
-        symbol
-      );
+      let entryPrice = parseFloat(order.avgPrice).toFixed(1)
+      console.log(`${side} - Entry price : ${entryPrice}`)
 
-      console.log("Process - set stoploss...")
-      const orderSL = await binance.futuresOrder(
-        "SELL",
-        symbol,
-        calculateQty,
-        false,
-        {
-          type: "STOP_MARKET",
-          newOrderRespType: "FULL",
-          stopPrice: priceStop.stopPrice,
-          closePosition: true,
-        }
-      );
-      console.log(`${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`)
-      console.log("Process - set takeprofit...")
-      const orderTP = await binance.futuresOrder(
-        "SELL",
-        symbol,
-        calculateQty,
-        false,
-        {
-          type: "TAKE_PROFIT_MARKET",
-          newOrderRespType: "FULL",
-          stopPrice: priceStop.takeProfitPrice,
-          closePosition: true,
-        }
-      );
-      console.log(`${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`)
+      if(order.status === "FILLED") {
+        priceStop = await getStopLossTakeProfit(
+          "BUY",
+          entryPrice,
+          rrr,
+          basedTick,
+          tickSize,
+          symbol
+        );
+  
+        console.log("Process - set stoploss...")
+        const orderSL = await binance.futuresOrder(
+          "SELL",
+          symbol,
+          calculateQty,
+          false,
+          {
+            type: "STOP_MARKET",
+            newOrderRespType: "FULL",
+            stopPrice: priceStop.stopPrice,
+            closePosition: true,
+          }
+        );
+        console.log(`${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`)
+        console.log("Process - set takeprofit...")
+        const orderTP = await binance.futuresOrder(
+          "SELL",
+          symbol,
+          calculateQty,
+          false,
+          {
+            type: "TAKE_PROFIT_MARKET",
+            newOrderRespType: "FULL",
+            stopPrice: priceStop.takeProfitPrice,
+            closePosition: true,
+          }
+        );
+        console.log(`${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`)
+      }
+
+      
     } else if (side === "SELL" || side === "SHORT") {
       if (type === "LIMIT") {
         order = await binance.futuresSell(symbol, calculateQty, roundedPrice, {
@@ -182,20 +192,26 @@ exports.placeOrder = async (req, res) => {
         });
       } else {
         console.log(`Create new MARKET ${side} order`)
-        order = await binance.futuresMarketSell(symbol, calculateQty);
+        order = await binance.futuresMarketSell(symbol, calculateQty, {
+          newOrderRespType: "RESULT"
+        });
         console.log(`${order.status} - Success placing order`)
       }
 
-      priceStop = await getStopLossTakeProfit(
-        "SELL",
-        roundedPrice,
-        rrr,
-        basedTick,
-        tickSize,
-        symbol
-      );
+      let entryPrice = parseFloat(order.avgPrice).toFixed(1)
+      console.log(`${side} - Entry price : ${entryPrice}`)
 
-      if(order.status === "NEW") {
+      if(order.status === "FILLED") {
+
+        priceStop = await getStopLossTakeProfit(
+          "SELL",
+          entryPrice,
+          rrr,
+          basedTick,
+          tickSize,
+          symbol
+        );
+
         console.log("Process - set stoploss...")
         const orderSL = await binance.futuresOrder(
           "BUY",
