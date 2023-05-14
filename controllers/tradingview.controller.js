@@ -106,7 +106,7 @@ exports.placeOrder = async (req, res) => {
     tickSize
   );
 
-  const calculateQty = await futuresCalculateQty(
+  let calculateQty = await futuresCalculateQty(
     symbolInfo,
     parseFloat(priceLimit),
     parseInt(quantityUsdt)
@@ -133,14 +133,14 @@ exports.placeOrder = async (req, res) => {
           type: "LIMIT",
         });
       } else {
-        console.log(`Create new MARKET ${side} order`)
+        console.log(`========== Create new MARKET ${side} order ==========`)
         order = await binance.futuresMarketBuy(symbol, calculateQty, {
           newOrderRespType: "RESULT"
         });
         console.log(`${order.status} - Success placing order`)
       }
 
-      let entryPrice = parseFloat(order.avgPrice).toFixed(1)
+      let entryPrice = parseFloat(order.avgPrice).toFixed(4)
       console.log(`${side} - Entry price : ${entryPrice}`)
 
       if(order.status === "FILLED") {
@@ -157,11 +157,11 @@ exports.placeOrder = async (req, res) => {
         const orderSL = await binance.futuresOrder(
           "SELL",
           symbol,
-          calculateQty,
+          order.executedQty,
           false,
           {
             type: "STOP_MARKET",
-            newOrderRespType: "FULL",
+            newOrderRespType: "RESULT",
             stopPrice: priceStop.stopPrice,
             closePosition: true,
           }
@@ -171,11 +171,11 @@ exports.placeOrder = async (req, res) => {
         const orderTP = await binance.futuresOrder(
           "SELL",
           symbol,
-          calculateQty,
+          order.executedQty,
           false,
           {
             type: "TAKE_PROFIT_MARKET",
-            newOrderRespType: "FULL",
+            newOrderRespType: "RESULT",
             stopPrice: priceStop.takeProfitPrice,
             closePosition: true,
           }
@@ -191,14 +191,14 @@ exports.placeOrder = async (req, res) => {
           type: "LIMIT",
         });
       } else {
-        console.log(`Create new MARKET ${side} order`)
+        console.log(`========== Create new MARKET ${side} order ==========`)
         order = await binance.futuresMarketSell(symbol, calculateQty, {
           newOrderRespType: "RESULT"
         });
         console.log(`${order.status} - Success placing order`)
       }
 
-      let entryPrice = parseFloat(order.avgPrice).toFixed(1)
+      let entryPrice = parseFloat(order.avgPrice).toFixed(4)
       console.log(`${side} - Entry price : ${entryPrice}`)
 
       if(order.status === "FILLED") {
@@ -216,11 +216,11 @@ exports.placeOrder = async (req, res) => {
         const orderSL = await binance.futuresOrder(
           "BUY",
           symbol,
-          calculateQty,
+          order.executedQty,
           false,
           {
             type: "STOP_MARKET",
-            newOrderRespType: "FULL",
+            newOrderRespType: "RESULT",
             stopPrice: priceStop.stopPrice,
             closePosition: true,
           }
@@ -231,11 +231,11 @@ exports.placeOrder = async (req, res) => {
         const orderTP = await binance.futuresOrder(
           "BUY",
           symbol,
-          calculateQty,
+          order.executedQty,
           false,
           {
             type: "TAKE_PROFIT_MARKET",
-            newOrderRespType: "FULL",
+            newOrderRespType: "RESULT",
             stopPrice: priceStop.takeProfitPrice,
             closePosition: true,
           }
