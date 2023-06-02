@@ -48,26 +48,24 @@ const getStopLossTakeProfit = async (
   tickSize,
   symbol
 ) => {
-
-  if(symbol === "SOLUSDT") tickSize = 0.001
-
+  if (symbol === "SOLUSDT") tickSize = 0.001;
 
   let takeProfitPrice = await binance.roundTicks(
-    parseFloat(priceLimit) + (rrr * basedTick * tickSize),
+    parseFloat(priceLimit) + rrr * basedTick * tickSize,
     tickSize
   );
   let stopPrice = await binance.roundTicks(
-    parseFloat(priceLimit) -( basedTick * tickSize),
+    parseFloat(priceLimit) - basedTick * tickSize,
     tickSize
   );
 
   if (type === "SELL" || type === "SHORT") {
     takeProfitPrice = await binance.roundTicks(
-      parseFloat(priceLimit) - (rrr * basedTick * tickSize),
+      parseFloat(priceLimit) - rrr * basedTick * tickSize,
       tickSize
     );
     stopPrice = await binance.roundTicks(
-      parseFloat(priceLimit) + (basedTick * tickSize),
+      parseFloat(priceLimit) + basedTick * tickSize,
       tickSize
     );
   }
@@ -88,11 +86,12 @@ exports.placeOrder = async (req, res) => {
     priceLimit,
     rrr = 2,
     basedTick,
-    moneyManagement = true
+    moneyManagement = true,
+    noStopLoss = false
   } = req.body;
 
   const exchangeInfo = await binance.futuresExchangeInfo();
-  
+
   const symbolInfo = exchangeInfo.symbols.find((s) => s.symbol === symbol);
   if (!symbolInfo) {
     throw new Error(`Symbol ${symbol} not found`);
@@ -134,18 +133,18 @@ exports.placeOrder = async (req, res) => {
           type: "LIMIT",
         });
       } else {
-        console.log(`========== Create new MARKET ${side} order ==========`)
+        console.log(`========== Create new MARKET ${side} order ==========`);
         order = await binance.futuresMarketBuy(symbol, calculateQty, {
-          newOrderRespType: "RESULT"
+          newOrderRespType: "RESULT",
         });
-        console.log(`${order.status} - Success placing order`)
+        console.log(`${order.status} - Success placing order`);
       }
 
-      let entryPrice = parseFloat(order.avgPrice).toFixed(4)
-      console.log(`${side} - Entry price : ${entryPrice}`)
+      let entryPrice = parseFloat(order.avgPrice).toFixed(4);
+      console.log(`${side} - Entry price : ${entryPrice}`);
 
-      if(moneyManagement) {
-        if(order.status === "FILLED") {
+      if (moneyManagement) {
+        if (order.status === "FILLED") {
           priceStop = await getStopLossTakeProfit(
             "BUY",
             entryPrice,
@@ -154,22 +153,26 @@ exports.placeOrder = async (req, res) => {
             tickSize,
             symbol
           );
-    
-          console.log("Process - set stoploss...")
-          const orderSL = await binance.futuresOrder(
-            "SELL",
-            symbol,
-            order.executedQty,
-            false,
-            {
-              type: "STOP_MARKET",
-              newOrderRespType: "RESULT",
-              stopPrice: priceStop.stopPrice,
-              closePosition: true,
-            }
-          );
-          console.log(`${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`)
-          console.log("Process - set takeprofit...")
+
+          if (!noStopLoss) {
+            console.log("Process - set stoploss...");
+            const orderSL = await binance.futuresOrder(
+              "SELL",
+              symbol,
+              order.executedQty,
+              false,
+              {
+                type: "STOP_MARKET",
+                newOrderRespType: "RESULT",
+                stopPrice: priceStop.stopPrice,
+                closePosition: true,
+              }
+            );
+            console.log(
+              `${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`
+            );
+          }
+          console.log("Process - set takeprofit...");
           const orderTP = await binance.futuresOrder(
             "SELL",
             symbol,
@@ -182,11 +185,11 @@ exports.placeOrder = async (req, res) => {
               closePosition: true,
             }
           );
-          console.log(`${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`)
+          console.log(
+            `${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`
+          );
         }
       }
-
-      
     } else if (side === "SELL" || side === "SHORT") {
       if (type === "LIMIT") {
         order = await binance.futuresSell(symbol, calculateQty, roundedPrice, {
@@ -194,19 +197,18 @@ exports.placeOrder = async (req, res) => {
           type: "LIMIT",
         });
       } else {
-        console.log(`========== Create new MARKET ${side} order ==========`)
+        console.log(`========== Create new MARKET ${side} order ==========`);
         order = await binance.futuresMarketSell(symbol, calculateQty, {
-          newOrderRespType: "RESULT"
+          newOrderRespType: "RESULT",
         });
-        console.log(`${order.status} - Success placing order`)
+        console.log(`${order.status} - Success placing order`);
       }
 
-      let entryPrice = parseFloat(order.avgPrice).toFixed(4)
-      console.log(`${side} - Entry price : ${entryPrice}`)
+      let entryPrice = parseFloat(order.avgPrice).toFixed(4);
+      console.log(`${side} - Entry price : ${entryPrice}`);
 
-      if(moneyManagement) {
-        if(order.status === "FILLED") {
-
+      if (moneyManagement) {
+        if (order.status === "FILLED") {
           priceStop = await getStopLossTakeProfit(
             "SELL",
             entryPrice,
@@ -215,23 +217,28 @@ exports.placeOrder = async (req, res) => {
             tickSize,
             symbol
           );
-  
-          console.log("Process - set stoploss...")
-          const orderSL = await binance.futuresOrder(
-            "BUY",
-            symbol,
-            order.executedQty,
-            false,
-            {
-              type: "STOP_MARKET",
-              newOrderRespType: "RESULT",
-              stopPrice: priceStop.stopPrice,
-              closePosition: true,
-            }
-          );
-  
-          console.log(`${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`)
-          console.log("Process - set takeprofit...")
+
+          if (!noStopLoss) {
+            console.log("Process - set stoploss...");
+            const orderSL = await binance.futuresOrder(
+              "BUY",
+              symbol,
+              order.executedQty,
+              false,
+              {
+                type: "STOP_MARKET",
+                newOrderRespType: "RESULT",
+                stopPrice: priceStop.stopPrice,
+                closePosition: true,
+              }
+            );
+
+            console.log(
+              `${orderSL.status} - Success placing stoploss at ${priceStop.stopPrice}`
+            );
+          }
+
+          console.log("Process - set takeprofit...");
           const orderTP = await binance.futuresOrder(
             "BUY",
             symbol,
@@ -244,7 +251,9 @@ exports.placeOrder = async (req, res) => {
               closePosition: true,
             }
           );
-          console.log(`${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`)
+          console.log(
+            `${orderTP.status} - Success placing order take profit at ${priceStop.takeProfitPrice}`
+          );
         }
       }
     }
